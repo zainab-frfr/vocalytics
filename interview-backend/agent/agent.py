@@ -85,7 +85,6 @@ def build_question_markers(questions: list[dict]) -> dict[str, str]:
 
 
 async def entrypoint(ctx: JobContext):
-    # Parse metadata
     metadata = {}
     if ctx.job.metadata:
         try:
@@ -103,7 +102,6 @@ async def entrypoint(ctx: JobContext):
 
     logger.warning(f"Starting session={session_id} interview={interview_id}")
 
-    # Fetch questions
     try:
         questions = await fetch_questions(interview_id)
     except Exception as e:
@@ -114,7 +112,6 @@ async def entrypoint(ctx: JobContext):
         logger.error("Empty question list")
         return
 
-    # Connect to room
     await ctx.connect()
 
     state = {"current_question": None, "last_saved": None}
@@ -159,7 +156,13 @@ async def entrypoint(ctx: JobContext):
         instructions="Greet the user warmly in Urdu and ask the first question."
     )
 
-    await ctx.wait_for_disconnect()
+    disconnect_event = asyncio.Event()
+
+    @ctx.room.on("disconnected")
+    def on_disconnected(*args):
+        disconnect_event.set()
+
+    await disconnect_event.wait()
 
     try:
         await mark_complete(session_id)
