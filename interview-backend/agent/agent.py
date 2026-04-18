@@ -7,7 +7,7 @@ import aiohttp
 from dotenv import load_dotenv
 from livekit.agents import JobContext, WorkerOptions, cli
 from livekit.agents.voice import Agent, AgentSession
-from livekit.plugins import azure, deepgram, groq, silero
+from livekit.plugins import azure, deepgram, groq
 
 load_dotenv(".env.local")
 
@@ -124,7 +124,6 @@ async def entrypoint(ctx: JobContext):
         stt=deepgram.STT(language="ur"),
         llm=groq.LLM(model="llama-3.3-70b-versatile"),
         tts=azure.TTS(voice="ur-PK-UzmaNeural"),
-        vad=silero.VAD.load(),
     )
 
     @session.on("user_input_transcribed")
@@ -141,6 +140,8 @@ async def entrypoint(ctx: JobContext):
 
     @session.on("conversation_item_added")
     def on_agent_spoke(event):
+        if not hasattr(event.item, "role"):
+            return
         if event.item.role != "assistant":
             return
         agent_text = event.item.text_content
