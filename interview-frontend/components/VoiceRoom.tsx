@@ -18,12 +18,21 @@ interface VoiceRoomProps {
 function RoomContent({ onComplete }: { onComplete: () => void }) {
   const { state, audioTrack } = useVoiceAssistant();
   const { t } = useLang();
+  const [hasConnected, setHasConnected] = useState(false);
 
   useEffect(() => {
-    if (state === "disconnected") {
+    if (
+      state === "connecting" ||
+      state === "listening" ||
+      state === "speaking" ||
+      state === "thinking"
+    ) {
+      setHasConnected(true);
+    }
+    if (state === "disconnected" && hasConnected) {
       setTimeout(onComplete, 1000);
     }
-  }, [state]);
+  }, [state, hasConnected]);
 
   const getStatusText = () => {
     switch (state) {
@@ -120,7 +129,6 @@ export default function VoiceRoom({ token, url, onComplete }: VoiceRoomProps) {
       connect={true}
       audio={true}
       video={false}
-      onDisconnected={onComplete}
       style={{ height: "100%" }}
     >
       <RoomContent onComplete={onComplete} />

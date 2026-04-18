@@ -5,9 +5,9 @@ import os
 
 import aiohttp
 from dotenv import load_dotenv
-from livekit.agents import Agent, AgentServer, AgentSession, JobContext, cli
+from livekit.agents import JobContext, WorkerOptions, cli
+from livekit.agents.voice import Agent, AgentSession
 from livekit.plugins import azure, deepgram, groq, silero
-from supabase import AsyncClient, acreate_client
 
 load_dotenv(".env.local")
 
@@ -21,8 +21,6 @@ SUPABASE_URL     = os.environ["SUPABASE_URL"]
 SUPABASE_KEY     = os.environ["SUPABASE_SERVICE_KEY"]
 INTERNAL_API_URL = os.environ["INTERNAL_API_URL"]
 INTERNAL_API_KEY = os.environ["INTERNAL_API_KEY"]
-
-server = AgentServer()
 
 
 async def fetch_questions(interview_id: str) -> list[dict]:
@@ -43,7 +41,9 @@ async def mark_complete(session_id: str) -> None:
             resp.raise_for_status()
 
 
-async def save_response(supabase, session_id, question_id, question_text, response):
+async def save_response(session_id, question_id, question_text, response):
+    from supabase import acreate_client
+    supabase = await acreate_client(SUPABASE_URL, SUPABASE_KEY)
     try:
         await supabase.table("responses").insert({
             "session_id":    session_id,
@@ -57,20 +57,20 @@ async def save_response(supabase, session_id, question_id, question_text, respon
 
 def build_instructions(questions: list[dict]) -> str:
     return f"""
-آپ ایک پیشہ ور انٹرویو اسسٹنٹ ہیں جو ایک ریسرچ انٹرویو کر رہے ہیں۔
-آپ کا مقصد نیچے دیے گئے سوالات ترتیب سے پوچھنا ہے۔
+You are a professional interview assistant conducting a research interview in Urdu.
+Your goal is to ask the following questions in order.
 
-**سوالات:**
+Questions:
 {json.dumps(questions, ensure_ascii=False, indent=2)}
 
-**سخت اصول:**
-1. صرف اردو میں بات کریں۔ آسان، روزمرہ کی زبان استعمال کریں۔
-2. ایک وقت میں صرف ایک سوال پوچھیں، بالکل ویسے ہی جیسے لکھا ہے۔
-3. اگلے سوال پر جانے سے پہلے صارف کا جواب سنیں۔
-4. اگر جواب غیر متعلق ہو تو شائستگی سے سوال دہرائیں۔
-5. صارف کا جواب کبھی نہ دہرائیں۔
-6. ہر جواب کے بعد شکریہ نہ کہیں۔ صرف آخر میں شکریہ کہیں۔
-7. صرف تب سوال دہرائیں جب صارف وضاحت مانگے۔
+Strict Rules:
+1. Speak only in Urdu. Use simple, everyday language.
+2. Ask one question at a time, exactly as written. Do not rephrase.
+3. Wait for the user's response before moving to the next question.
+4. If a response is irrelevant, politely ask them to answer the question.
+5. Never echo the user's answer back.
+6. Do not thank after each answer. Only say thank you at the very end.
+7. Only repeat a question if the user asks for clarification.
 """
 
 
@@ -79,13 +79,13 @@ def build_question_markers(questions: list[dict]) -> dict[str, str]:
     for q in questions:
         text = q["text"]
         start = min(5, len(text))
-        end   = min(start + 15, len(text))
+        end = min(start + 15, len(text))
         markers[q["id"]] = text[start:end]
     return markers
 
 
-@server.rtc_session()
-async def run_interview(ctx: JobContext):
+async def entrypoint(ctx: JobContext):
+    # Parse metadata
     metadata = {}
     if ctx.job.metadata:
         try:
@@ -101,6 +101,9 @@ async def run_interview(ctx: JobContext):
         logger.error(f"Missing interview_id or session_id in metadata: {metadata}")
         return
 
+    logger.warning(f"Starting session={session_id} interview={interview_id}")
+
+    # Fetch questions
     try:
         questions = await fetch_questions(interview_id)
     except Exception as e:
@@ -108,14 +111,11 @@ async def run_interview(ctx: JobContext):
         return
 
     if not questions:
-        logger.error("Empty question list — aborting")
+        logger.error("Empty question list")
         return
 
-    supabase: AsyncClient = await acreate_client(SUPABASE_URL, SUPABASE_KEY)
-
-    class InterviewAgent(Agent):
-        def __init__(self):
-            super().__init__(instructions=build_instructions(questions))
+    # Connect to room
+    await ctx.connect()
 
     state = {"current_question": None, "last_saved": None}
     question_markers = build_question_markers(questions)
@@ -132,10 +132,10 @@ async def run_interview(ctx: JobContext):
         if not event.is_final:
             return
         transcript = event.transcript
-        current_q  = state["current_question"]
+        current_q = state["current_question"]
         if current_q and state["last_saved"] != transcript:
             asyncio.create_task(
-                save_response(supabase, session_id, current_q["id"], current_q["text"], transcript)
+                save_response(session_id, current_q["id"], current_q["text"], transcript)
             )
             state["last_saved"] = transcript
 
@@ -152,9 +152,10 @@ async def run_interview(ctx: JobContext):
                         break
                 break
 
-    await session.start(agent=InterviewAgent(), room=ctx.room)
+    agent = Agent(instructions=build_instructions(questions))
+    await session.start(agent=agent, room=ctx.room)
     await session.generate_reply(
-        instructions="السلام علیکم۔ صارف کو خوش آمدید کہیں۔ پھر پہلا سوال پوچھیں۔"
+        instructions="Greet the user warmly in Urdu and ask the first question."
     )
 
     await ctx.wait_for_disconnect()
@@ -162,8 +163,11 @@ async def run_interview(ctx: JobContext):
     try:
         await mark_complete(session_id)
     except Exception as e:
-        logger.error(f"Failed to mark session complete: {e}")
+        logger.error(f"Failed to mark complete: {e}")
 
 
 if __name__ == "__main__":
-    cli.run_app(server)
+    cli.run_app(WorkerOptions(
+        entrypoint_fnc=entrypoint,
+        agent_name="interview-agent",
+    ))
