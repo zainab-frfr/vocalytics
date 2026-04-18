@@ -12,7 +12,7 @@ load_dotenv(".env.local")
 
 def create_app() -> Flask:
     app = Flask(__name__)
-    CORS(app, resources={r"/*": {"origins": os.environ.get("CORS_ORIGIN", "*")}})
+    CORS(app, origins="*", supports_credentials=False)
 
     app.register_blueprint(auth_bp,       url_prefix="/auth")
     app.register_blueprint(interviews_bp, url_prefix="/interviews")
