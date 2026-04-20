@@ -13,20 +13,25 @@ def get_questions(interview_id: str):
         supabase = get_supabase()
         result = (
             supabase.table("interviews")
-            .select("id, title, questions")
+            .select("id, title, questions, prompt, language")
             .eq("id", interview_id)
             .single()
             .execute()
         )
         if not result.data:
             return jsonify({"error": "Interview not found"}), 404
+
         interview = result.data
         questions = sorted(interview["questions"], key=lambda q: q.get("order", 0))
+
         return jsonify({
             "interview_id": interview["id"],
             "title":        interview["title"],
             "questions":    questions,
+            "prompt":       interview.get("prompt") or "",
+            "language":     interview.get("language") or "ur",
         }), 200
+
     except Exception as e:
         return jsonify({"error": str(e)}), 500
 

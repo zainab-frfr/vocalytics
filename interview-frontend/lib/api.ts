@@ -28,7 +28,7 @@ export const api = {
     request("/auth/login", { method: "POST", body: JSON.stringify({ email, password }) }),
 
   // Interviews
-  createInterview: (data: { title: string; description?: string; questions: object[] }) =>
+  createInterview: (data: { title: string; description?: string; questions: object[]; prompt?: string; language?: string }) =>
     request("/interviews/", { method: "POST", body: JSON.stringify(data) }),
 
   listInterviews: () => request("/interviews/"),

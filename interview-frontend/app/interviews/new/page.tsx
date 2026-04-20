@@ -5,6 +5,30 @@ import { useAuth } from "@/context/AuthContext";
 import { useLang } from "@/context/LanguageContext";
 import { api } from "@/lib/api";
 
+const DEFAULT_PROMPT_UR = `You are a professional interview assistant conducting a research interview in Urdu.
+Your goal is to ask the following questions in order.
+
+Strict Rules:
+1. Speak only in Urdu. Use simple, everyday language.
+2. Ask one question at a time, exactly as written. Do not rephrase.
+3. Wait for the user's response before moving to the next question.
+4. If a response is irrelevant, politely ask them to answer the question.
+5. Never echo the user's answer back.
+6. Do not thank after each answer. Only say thank you at the very end.
+7. Only repeat a question if the user asks for clarification.`;
+
+const DEFAULT_PROMPT_EN = `You are a professional interview assistant conducting a research interview in English.
+Your goal is to ask the following questions in order.
+
+Strict Rules:
+1. Speak only in English. Use simple, clear language.
+2. Ask one question at a time, exactly as written. Do not rephrase.
+3. Wait for the user's response before moving to the next question.
+4. If a response is irrelevant, politely ask them to answer the question.
+5. Never echo the user's answer back.
+6. Do not thank after each answer. Only say thank you at the very end.
+7. Only repeat a question if the user asks for clarification.`;
+
 interface Question {
   id: string;
   text: string;
@@ -19,11 +43,18 @@ export default function NewInterviewPage() {
 
   const [title, setTitle] = useState("");
   const [description, setDescription] = useState("");
+  const [language, setLanguage] = useState("ur");
+  const [prompt, setPrompt] = useState(DEFAULT_PROMPT_UR);
   const [questions, setQuestions] = useState<Question[]>([
     { id: "1", text: "", type: "general", order: 1 }
   ]);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
+
+  const handleLanguageChange = (lang: string) => {
+    setLanguage(lang);
+    setPrompt(lang === "ur" ? DEFAULT_PROMPT_UR : DEFAULT_PROMPT_EN);
+  };
 
   const addQuestion = () => {
     const newId = String(questions.length + 1);
@@ -67,10 +98,9 @@ export default function NewInterviewPage() {
     if (!title.trim()) { setError("Title is required"); return; }
     const empty = questions.find(q => !q.text.trim());
     if (empty) { setError("All questions must have text"); return; }
-
     setLoading(true);
     try {
-      const data = await api.createInterview({ title, description, questions });
+      const data = await api.createInterview({ title, description, questions, prompt, language });
       router.push(`/interviews/${data.interview.id}`);
     } catch (e: any) {
       setError(e.message);
@@ -93,6 +123,7 @@ export default function NewInterviewPage() {
         }}>{error}</div>
       )}
 
+      {/* Title + Description + Language */}
       <div className="card" style={{ marginBottom: 24 }}>
         <div style={{ marginBottom: 16 }}>
           <label style={{ fontSize: 13, color: "rgba(240,240,255,0.6)", display: "block", marginBottom: 6 }}>
@@ -105,7 +136,8 @@ export default function NewInterviewPage() {
             placeholder="e.g. Rio Biscuit Research"
           />
         </div>
-        <div>
+
+        <div style={{ marginBottom: 16 }}>
           <label style={{ fontSize: 13, color: "rgba(240,240,255,0.6)", display: "block", marginBottom: 6 }}>
             {t.description}
           </label>
@@ -116,8 +148,58 @@ export default function NewInterviewPage() {
             placeholder="Optional description"
           />
         </div>
+
+        <div>
+          <label style={{ fontSize: 13, color: "rgba(240,240,255,0.6)", display: "block", marginBottom: 8 }}>
+            Interview Language
+          </label>
+          <div style={{ display: "flex", gap: 10 }}>
+            {[
+              { value: "ur", label: "Urdu" },
+              { value: "en", label: "English" },
+            ].map(opt => (
+              <button
+                key={opt.value}
+                className={language === opt.value ? "btn-primary" : "btn-ghost"}
+                style={{ width: "auto", padding: "8px 24px" }}
+                onClick={() => handleLanguageChange(opt.value)}
+              >
+                {opt.label}
+              </button>
+            ))}
+          </div>
+        </div>
       </div>
 
+      {/* Agent Prompt */}
+      <div className="card" style={{ marginBottom: 24 }}>
+        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 8 }}>
+          <div>
+            <label style={{ fontSize: 14, fontWeight: 600, display: "block" }}>
+              Agent Prompt
+            </label>
+            <p style={{ fontSize: 12, color: "rgba(240,240,255,0.4)", marginTop: 2 }}>
+              Customize how the AI agent behaves during the interview
+            </p>
+          </div>
+          <button
+            className="btn-ghost"
+            style={{ padding: "4px 12px", fontSize: 12, flexShrink: 0 }}
+            onClick={() => setPrompt(language === "ur" ? DEFAULT_PROMPT_UR : DEFAULT_PROMPT_EN)}
+          >
+            Reset to default
+          </button>
+        </div>
+        <textarea
+          className="input"
+          value={prompt}
+          onChange={e => setPrompt(e.target.value)}
+          rows={10}
+          style={{ resize: "vertical", fontFamily: "monospace", fontSize: 13, lineHeight: 1.6 }}
+        />
+      </div>
+
+      {/* Questions */}
       <div style={{ marginBottom: 16 }}>
         <h2 style={{ fontSize: 18, fontWeight: 600 }}>{t.questions}</h2>
       </div>
@@ -134,7 +216,6 @@ export default function NewInterviewPage() {
               }}>
                 {index + 1}
               </div>
-
               <textarea
                 className="input"
                 value={q.text}
@@ -143,7 +224,6 @@ export default function NewInterviewPage() {
                 rows={2}
                 style={{ resize: "vertical", fontFamily: "inherit" }}
               />
-
               <div style={{ display: "flex", flexDirection: "column", gap: 4, flexShrink: 0 }}>
                 <button
                   className="btn-ghost"

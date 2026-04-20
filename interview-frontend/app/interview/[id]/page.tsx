@@ -1,9 +1,15 @@
 "use client";
-import { useState, useCallback } from "react";
+import { useState, useCallback, useEffect } from "react";
 import { useParams } from "next/navigation";
 import { useLang } from "@/context/LanguageContext";
 import { api } from "@/lib/api";
-import VoiceRoom from "../../../components/VoiceRoom"; // Adjust the path as necessary
+import VoiceRoom from "../../../components/VoiceRoom";
+
+interface Question {
+  id: string;
+  text: string;
+  order: number;
+}
 
 export default function InterviewPage() {
   const { t } = useLang();
@@ -20,6 +26,23 @@ export default function InterviewPage() {
     livekit_url: string;
     session_id: string;
   } | null>(null);
+
+  const [interviewTitle, setInterviewTitle] = useState("");
+  const [questions, setQuestions] = useState<Question[]>([]);
+
+  // Fetch interview details on load
+  useEffect(() => {
+    if (!id) return;
+    fetch(`${process.env.NEXT_PUBLIC_API_URL}/internal/interviews/${id}/questions`, {
+      headers: { "X-Internal-API-Key": "changeme" }
+    })
+      .then(r => r.json())
+      .then(data => {
+        setInterviewTitle(data.title || "");
+        setQuestions(data.questions || []);
+      })
+      .catch(console.error);
+  }, [id]);
 
   const handleStart = async () => {
     if (!name.trim()) { setError("Please enter your name"); return; }
@@ -64,6 +87,8 @@ export default function InterviewPage() {
         token={roomInfo.livekit_token}
         url={roomInfo.livekit_url}
         onComplete={handleComplete}
+        questions={questions}
+        interviewTitle={interviewTitle}
       />
     );
   }
@@ -76,6 +101,14 @@ export default function InterviewPage() {
       background: "radial-gradient(ellipse at top, rgba(168,85,247,0.15) 0%, transparent 60%)",
     }}>
       <div className="card" style={{ width: "100%", maxWidth: 420, textAlign: "center" }}>
+        {interviewTitle && (
+          <p style={{
+            fontSize: 13, color: "#a855f7", fontWeight: 600,
+            marginBottom: 8, letterSpacing: 0.5,
+          }}>
+            {interviewTitle}
+          </p>
+        )}
         <div style={{ fontSize: 48, marginBottom: 16 }}>🎙️</div>
         <h1 style={{ fontSize: 24, fontWeight: 700, marginBottom: 8 }}>{t.startInterview}</h1>
         <p style={{ color: "rgba(240,240,255,0.5)", marginBottom: 28, fontSize: 14 }}>
@@ -98,7 +131,6 @@ export default function InterviewPage() {
           style={{ marginBottom: 16, textAlign: "center" }}
           onKeyDown={e => e.key === "Enter" && handleStart()}
         />
-
         <button className="btn-primary" onClick={handleStart} disabled={loading}>
           {loading ? t.connecting : t.startInterview}
         </button>

@@ -1,3 +1,4 @@
+from livekit import rtc
 import asyncio
 import json
 import logging
@@ -23,14 +24,14 @@ INTERNAL_API_URL = os.environ["INTERNAL_API_URL"]
 INTERNAL_API_KEY = os.environ["INTERNAL_API_KEY"]
 
 
-async def fetch_questions(interview_id: str) -> list[dict]:
+async def fetch_questions(interview_id: str) -> tuple[list[dict], str, str]:
     url = f"{INTERNAL_API_URL}/internal/interviews/{interview_id}/questions"
     headers = {"X-Internal-API-Key": INTERNAL_API_KEY}
     async with aiohttp.ClientSession() as http:
         async with http.get(url, headers=headers, timeout=aiohttp.ClientTimeout(total=10)) as resp:
             resp.raise_for_status()
             data = await resp.json()
-            return data["questions"]
+            return data["questions"], data.get("prompt", ""), data.get("language", "ur")
 
 
 async def mark_complete(session_id: str) -> None:
@@ -55,13 +56,8 @@ async def save_response(session_id, question_id, question_text, response):
         logger.error(f"Failed to save response: {e}")
 
 
-def build_instructions(questions: list[dict]) -> str:
-    return f"""
-You are a professional interview assistant conducting a research interview in Urdu.
+DEFAULT_PROMPT = """You are a professional interview assistant conducting a research interview in Urdu.
 Your goal is to ask the following questions in order.
-
-Questions:
-{json.dumps(questions, ensure_ascii=False, indent=2)}
 
 Strict Rules:
 1. Speak only in Urdu. Use simple, everyday language.
@@ -70,7 +66,18 @@ Strict Rules:
 4. If a response is irrelevant, politely ask them to answer the question.
 5. Never echo the user's answer back.
 6. Do not thank after each answer. Only say thank you at the very end.
-7. Only repeat a question if the user asks for clarification.
+7. Only repeat a question if the user asks for clarification."""
+
+
+def build_instructions(questions: list[dict], custom_prompt: str = "", language: str = "ur") -> str:
+    base = custom_prompt.strip() if custom_prompt.strip() else DEFAULT_PROMPT
+    lang_name = "English" if language == "en" else "Urdu"
+    return f"""{base}
+
+IMPORTANT: You must speak ENTIRELY in {lang_name} — including all numbers, options, and choices. Never mix languages.
+
+Questions:
+{json.dumps(questions, ensure_ascii=False, indent=2)}
 """
 
 
@@ -103,7 +110,7 @@ async def entrypoint(ctx: JobContext):
     logger.warning(f"Starting session={session_id} interview={interview_id}")
 
     try:
-        questions = await fetch_questions(interview_id)
+        questions, custom_prompt, language = await fetch_questions(interview_id)
     except Exception as e:
         logger.error(f"Failed to fetch questions: {e}")
         return
@@ -112,28 +119,92 @@ async def entrypoint(ctx: JobContext):
         logger.error("Empty question list")
         return
 
-    await ctx.connect()
-
     state = {"current_question": None, "last_saved": None}
     question_markers = build_question_markers(questions)
+    
+    STT_LANGUAGES = {
+        "ur": "ur",
+        "en": "en-US",
+    }
+    TTS_VOICES = {
+        "ur": "ur-PK-UzmaNeural",
+        "en": "en-US-AriaNeural",
+    }
+    stt_language = STT_LANGUAGES.get(language, "ur")
+    tts_voice = TTS_VOICES.get(language, "ur-PK-UzmaNeural")
+    instructions = build_instructions(questions, custom_prompt, language)
+    
+    print("\n" + "="*60)
+    print(f"SESSION:  {session_id}")
+    print(f"LANGUAGE: {language}")
+    print(f"STT:      deepgram ({stt_language})")
+    print(f"TTS:      azure ({tts_voice})")
+    print(f"LLM:      groq/llama-3.3-70b-versatile")
+    print(f"\nPROMPT:\n{instructions}")
+    print("="*60 + "\n")
 
+    await ctx.connect()
+    
     session = AgentSession(
-        stt=deepgram.STT(language="ur"),
+        stt=deepgram.STT(language=stt_language),
         llm=groq.LLM(model="llama-3.3-70b-versatile"),
-        tts=azure.TTS(voice="ur-PK-UzmaNeural"),
+        tts=azure.TTS(voice=tts_voice),
     )
+    
+    # Default to first question so responses are never lost
+    state["current_question"] = questions[0]
+    state["question_index"] = 0
+    pending_save: dict = {"task": None}
 
     @session.on("user_input_transcribed")
     def on_user_input(event):
         if not event.is_final:
             return
-        transcript = event.transcript
+        transcript = event.transcript.strip()
+        if not transcript:
+            return
         current_q = state["current_question"]
-        if current_q and state["last_saved"] != transcript:
-            asyncio.create_task(
-                save_response(session_id, current_q["id"], current_q["text"], transcript)
-            )
-            state["last_saved"] = transcript
+        if not current_q:
+            return
+        if state["last_saved"] == transcript:
+            return
+
+        print(f"[USER Q{current_q['id']}] {transcript}")
+
+        if pending_save["task"] and not pending_save["task"].done():
+            pending_save["task"].cancel()
+
+        async def delayed_save():
+            await asyncio.sleep(0.5)
+            if state["last_saved"] != transcript:
+                state["last_saved"] = transcript
+                await save_response(
+                    session_id,
+                    current_q["id"],
+                    current_q["text"],
+                    transcript
+                )
+                # Advance to next question after saving
+                next_index = state["question_index"] + 1
+                if next_index < len(questions):
+                    state["question_index"] = next_index
+                    state["current_question"] = questions[next_index]
+                    state["last_saved"] = None
+                    print(f"[TRACKER] Advanced to Q{questions[next_index]['id']}")
+                
+                    # ✅ Publish current question index to frontend via DataChannel
+                    payload = json.dumps({
+                        "type": "question_index",
+                        "index": next_index
+                    }).encode("utf-8")
+                    await ctx.room.local_participant.publish_data(
+                        payload,
+                        reliable=True,
+                        topic="question_index"
+                    )
+
+        pending_save["task"] = asyncio.create_task(delayed_save())
+
 
     @session.on("conversation_item_added")
     def on_agent_spoke(event):
@@ -141,19 +212,12 @@ async def entrypoint(ctx: JobContext):
             return
         if event.item.role != "assistant":
             return
-        agent_text = event.item.text_content
-        for q_id, marker in question_markers.items():
-            if marker in agent_text:
-                for q in questions:
-                    if q["id"] == q_id:
-                        state["current_question"] = q
-                        break
-                break
+        print(f"[AGENT] {event.item.text_content}")
 
-    agent = Agent(instructions=build_instructions(questions))
+    agent = Agent(instructions=instructions)
     await session.start(agent=agent, room=ctx.room)
     await session.generate_reply(
-        instructions="Greet the user warmly in Urdu and ask the first question."
+        instructions="Greet the user warmly and ask the first question."
     )
 
     disconnect_event = asyncio.Event()
@@ -174,4 +238,5 @@ if __name__ == "__main__":
     cli.run_app(WorkerOptions(
         entrypoint_fnc=entrypoint,
         agent_name="interview-agent",
+        load_threshold=0.9,
     ))

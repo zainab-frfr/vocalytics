@@ -32,6 +32,8 @@ def create_interview():
                 "title":       title,
                 "description": description or None,
                 "questions":   questions,
+                "prompt":      body.get("prompt") or None,
+                "language": body.get("language") or "ur",
             })
             .execute()
         )
