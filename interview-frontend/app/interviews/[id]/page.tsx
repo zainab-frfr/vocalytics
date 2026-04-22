@@ -5,6 +5,9 @@ import Link from "next/link";
 import { useAuth } from "@/context/AuthContext";
 import { useLang } from "@/context/LanguageContext";
 import { api } from "@/lib/api";
+import CreateDashboardModal from "@/components/dashboard/CreateDashboardModal";
+
+
 
 interface Session {
   id: string;
@@ -22,6 +25,7 @@ interface Response {
 }
 
 export default function InterviewDetailPage() {
+  const [showDashboardModal, setShowDashboardModal] = useState(false);
   const { user, loading } = useAuth();
   const { t } = useLang();
   const router = useRouter();
@@ -76,6 +80,22 @@ export default function InterviewDetailPage() {
     setTimeout(() => setCopied(false), 2000);
   };
 
+  // Group responses by question_id, concatenating multiple answers into one
+  const groupedResponses = responses.reduce<{ question_id: string; question_text: string; response: string }[]>(
+    (acc, r) => {
+      const existing = acc.find(item => item.question_id === r.question_id);
+      if (existing) {
+        existing.response = existing.response
+          ? `${existing.response} ${r.response}`
+          : r.response;
+      } else {
+        acc.push({ question_id: r.question_id, question_text: r.question_text, response: r.response });
+      }
+      return acc;
+    },
+    []
+  );
+
   if (loading || fetching) {
     return (
       <div style={{ display: "flex", alignItems: "center", justifyContent: "center", minHeight: "calc(100vh - 60px)" }}>
@@ -111,7 +131,18 @@ export default function InterviewDetailPage() {
           <button className="btn-primary" onClick={copyLink} style={{ width: "auto", padding: "10px 20px", flexShrink: 0 }}>
             {copied ? t.copied : t.copyLink}
           </button>
+          <button className="btn-ghost" onClick={() => setShowDashboardModal(true)}
+            style={{ padding: "10px 20px", flexShrink: 0 }}>
+             Create Dashboard
+          </button>
+          {showDashboardModal && (
+            <CreateDashboardModal
+              interviewId={id}
+              onClose={() => setShowDashboardModal(false)}
+            />
+          )}
         </div>
+        
       </div>
 
       {/* Questions */}
@@ -180,11 +211,11 @@ export default function InterviewDetailPage() {
                   }}>
                     {loadingResponses ? (
                       <p style={{ color: "rgba(240,240,255,0.4)", fontSize: 14 }}>{t.loading}</p>
-                    ) : responses.length === 0 ? (
+                    ) : groupedResponses.length === 0 ? (
                       <p style={{ color: "rgba(240,240,255,0.4)", fontSize: 14 }}>No responses recorded.</p>
                     ) : (
                       <div style={{ display: "flex", flexDirection: "column", gap: 16 }}>
-                        {responses.map((r, i) => (
+                        {groupedResponses.map((r, i) => (
                           <div key={i} style={{ borderBottom: "1px solid rgba(255,255,255,0.06)", paddingBottom: 16 }}>
                             <p style={{ fontSize: 13, color: "#a855f7", fontWeight: 600, marginBottom: 6 }}>
                               Q{r.question_id}: {r.question_text}

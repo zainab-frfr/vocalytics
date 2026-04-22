@@ -7,6 +7,8 @@ from api.interviews import interviews_bp
 from api.sessions import sessions_bp
 from api.internal import internal_bp
 
+from api.dashboards import dashboards_bp
+
 from dotenv import load_dotenv
 load_dotenv(".env.local")
 
@@ -18,6 +20,7 @@ def create_app() -> Flask:
     app.register_blueprint(interviews_bp, url_prefix="/interviews")
     app.register_blueprint(sessions_bp,   url_prefix="/sessions")
     app.register_blueprint(internal_bp,   url_prefix="/internal")
+    app.register_blueprint(dashboards_bp, url_prefix="/dashboards")
 
     @app.get("/health")
     def health():
