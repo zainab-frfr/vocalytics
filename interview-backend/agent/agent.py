@@ -144,12 +144,20 @@ async def entrypoint(ctx: JobContext):
     async def advance_question(answer: str) -> str:
         """
         Call this tool when the user has given a valid answer to the current question.
-        Pass the user's answer as the 'answer' parameter.
-        This saves the response and advances the interview to the next question.
+
+        How to fill the 'answer' parameter depends on the question type:
+        - If the question has type "mcq" (has numbered options like 1, 2, 3...):
+        pass ONLY the number the user selected (e.g. "2"). If the user said the
+        option name instead of the number, convert it to the corresponding number.
+        - If the question has type "open-ended" (no numbered options):
+        pass the user's exact spoken words verbatim, do not summarize or rephrase.
+
+        Never leave answer empty.
         """
         current_index = state["question_index"]
         current_q = questions[current_index]
 
+        print(f"[TOOL] advance_question | type={current_q.get('type')} | Q{current_q['id']}: {answer}")
         print(f"[TOOL] advance_question called for Q{current_q['id']}: {answer}")
 
         # Save response to Supabase
