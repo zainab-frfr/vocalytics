@@ -39,6 +39,8 @@ function RoomContent({ onComplete, questions, interviewTitle }: {
       const data = JSON.parse(new TextDecoder().decode(msg.payload));
       if (data.type === "question_index") {
         setCurrentQuestionIndex(data.index);
+      }else if (data.type === "interview_complete") {  // ✅ add this
+        setTimeout(onComplete, 1000); // give agent 1s to say thank you first
       }
     } catch (e) {
       console.error("Failed to parse data message", e);
@@ -195,7 +197,7 @@ function RoomContent({ onComplete, questions, interviewTitle }: {
           style={{ padding: "8px 20px", fontSize: 13 }}
           onClick={onComplete}
         >
-          End Interview
+          Leave Interview
         </button>
       </div>
     </div>
