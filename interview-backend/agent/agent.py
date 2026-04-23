@@ -205,7 +205,7 @@ async def entrypoint(ctx: JobContext):
             print(f"[TOOL] All questions completed")
             async def signal_complete_after_speech():
                 await asyncio.sleep(1.0)  # give TTS time to start generating
-                while session.agent_state not in ("listening", "idle", "initializing"):
+                while session.agent_state not in ("listening", "idle", "initializing") and session.agent_state is not None and session.agent_state == "speaking":
                     print(session.agent_state)
                     await asyncio.sleep(0.5)
                 
