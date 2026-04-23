@@ -163,6 +163,12 @@ async def entrypoint(ctx: JobContext):
 
     await ctx.connect()
 
+    session = AgentSession(
+        stt=deepgram.STT(language=stt_language),
+        llm=groq.LLM(model="llama-3.3-70b-versatile"),
+        tts=azure.TTS(voice=tts_voice),
+    )
+    
     # Define the tool — closures capture session_id, questions, state, ctx
     @function_tool
     async def advance_question(answer: str) -> str:
@@ -197,7 +203,21 @@ async def entrypoint(ctx: JobContext):
         if next_index >= len(questions):
             # All questions done — notify frontend we're on the last one still
             print(f"[TOOL] All questions completed")
-            return "All questions have been answered. Thank the user and end the interview."
+            async def signal_complete_after_speech():
+                await asyncio.sleep(1.0)  # give TTS time to start generating
+                while session.agent_state not in ("listening", "idle", "initializing"):
+                    print(session.agent_state)
+                    await asyncio.sleep(0.5)
+                
+                await asyncio.sleep(0.5)  # small buffer after state change
+                payload = json.dumps({"type": "interview_complete"}).encode("utf-8")
+                await ctx.room.local_participant.publish_data(
+                    payload, reliable=True, topic="question_index",
+                )
+                print("[SIGNAL] Sent interview_complete to frontend")
+
+            asyncio.create_task(signal_complete_after_speech())
+            return "All questions have been answered. Thank the user and tell them that interview is over. End the interview."
 
         # Advance state
         state["question_index"] = next_index
@@ -216,12 +236,6 @@ async def entrypoint(ctx: JobContext):
         )
 
         return f"Response saved. Now ask question {next_index + 1}: {next_q['text']}"
-
-    session = AgentSession(
-        stt=deepgram.STT(language=stt_language),
-        llm=groq.LLM(model="llama-3.3-70b-versatile"),
-        tts=azure.TTS(voice=tts_voice),
-    )
 
     @session.on("conversation_item_added")
     def on_agent_spoke(event):
