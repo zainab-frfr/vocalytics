@@ -89,7 +89,7 @@ if not interview_id:
     st.stop()
 
 # ── Load data ────────────────────────────────────────────────────────────────
-@st.cache_data(ttl=300)
+@st.cache_data(ttl=300, show_spinner=False)
 def load_data(iid: str):
     return (
         get_interview(iid),
@@ -97,7 +97,8 @@ def load_data(iid: str):
         get_question_texts(iid),
     )
 
-interview, responses, question_texts = load_data(interview_id)
+with st.spinner("Loading..."):
+  interview, responses, question_texts = load_data(interview_id)
 
 # ── Header card ───────────────────────────────────────────────────────────────
 st.markdown(f"""

@@ -94,25 +94,25 @@ def render(interview, responses, theme,
     with col2:
         btn1, btn2 = st.columns(2, gap="small")
 
-        with btn1:
+        with btn2:
             if st.button("Refresh", use_container_width=True):
                 st.cache_data.clear()
                 st.rerun()
 
-        with btn2:
-            if st.button("Export PNG", use_container_width=True):
-                with st.spinner("Exporting..."):
-                    png = build_png(
-                        interview, responses, theme,
-                        chart_selections, question_types, question_texts
-                    )
-                    st.download_button(
-                        "Download PNG",
-                        png,
-                        file_name="dashboard.png",
-                        mime="image/png",
-                        use_container_width=True
-                    )
+        # with btn2:
+        #     if st.button("Export PNG", use_container_width=True):
+        #         with st.spinner("Exporting..."):
+        #             png = build_png(
+        #                 interview, responses, theme,
+        #                 chart_selections, question_types, question_texts
+        #             )
+        #             st.download_button(
+        #                 "Download PNG",
+        #                 png,
+        #                 file_name="dashboard.png",
+        #                 mime="image/png",
+        #                 use_container_width=True
+        #             )
 
     st.divider()
 
