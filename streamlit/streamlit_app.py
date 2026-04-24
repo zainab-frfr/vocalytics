@@ -25,10 +25,22 @@ theme = THEMES.get(theme_name, THEMES["dark_purple"])
 
 st.markdown(f"""
 <style>
-  .stApp           {{ background-color: {theme['bg']}; color: {theme['text']}; }}
-  header           {{ visibility: hidden; }}
-  #MainMenu        {{ visibility: hidden; }}
-  footer           {{ visibility: hidden; }}
+  .stApp {{
+    background-color: {theme['bg']};
+    color: {theme['text']};
+  }}
+
+  .stApp, p, span, div, label {{
+    color: #f0f0ff !important;
+  }}
+
+  [data-testid="stMarkdownContainer"] {{
+    color: #f0f0ff !important;
+  }}
+
+  header {{ visibility: hidden; }}
+  #MainMenu {{ visibility: hidden; }}
+  footer {{ visibility: hidden; }}
 
   .block-container {{
     max-width: 1200px;
@@ -37,14 +49,17 @@ st.markdown(f"""
     padding-bottom: 2rem;
   }}
 
-  h1,h2,h3,h4      {{ color: {theme['text']} !important; }}
-  hr               {{ border-color: rgba(255,255,255,0.08); }}
+  h1,h2,h3,h4 {{
+    color: {theme['text']} !important;
+  }}
+
+  hr {{
+    border-color: rgba(255,255,255,0.08);
+  }}
 
   div[data-testid="stHorizontalBlock"] {{
     align-items: stretch;
   }}
-
-  /* ── BUTTON STYLING (IMPORTANT) ───────────────────────── */
 
   div.stButton > button {{
     background-color: transparent;
@@ -65,15 +80,15 @@ st.markdown(f"""
     outline: none;
     box-shadow: none;
   }}
-
 </style>
 """, unsafe_allow_html=True)
+
 # ── Guard ─────────────────────────────────────────────────────────────────────
 if not interview_id:
     st.error("No interview ID provided. Open this dashboard from Vocalytics.")
     st.stop()
 
-# ── Load data (cached so Refresh → cache.clear → rerun works) ────────────────
+# ── Load data ────────────────────────────────────────────────────────────────
 @st.cache_data(ttl=300)
 def load_data(iid: str):
     return (
@@ -87,7 +102,8 @@ interview, responses, question_texts = load_data(interview_id)
 # ── Header card ───────────────────────────────────────────────────────────────
 st.markdown(f"""
 <div style="padding:20px 24px;border-radius:12px;
-            background:{theme['card_bg']};margin-bottom:20px;">
+            background:{theme['card_bg']['css']};
+            margin-bottom:20px;">
   <h2 style="margin:0">{interview.get('title','Dashboard')}</h2>
   {f"<p style='color:{theme['subtext']};margin:6px 0 0'>{interview['description']}</p>"
    if interview.get('description') else ""}
@@ -96,8 +112,15 @@ st.markdown(f"""
 
 # ── Render template ───────────────────────────────────────────────────────────
 TEMPLATE_MAP = {
-    "generic":    generic_tpl,
+    "generic": generic_tpl,
 }
+
 renderer = TEMPLATE_MAP.get(template_name, generic_tpl)
-renderer.render(interview, responses, theme,
-                chart_selections, question_types, question_texts)
+renderer.render(
+    interview,
+    responses,
+    theme,
+    chart_selections,
+    question_types,
+    question_texts
+)
