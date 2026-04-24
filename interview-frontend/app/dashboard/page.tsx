@@ -92,17 +92,27 @@ export default function DashboardPage() {
       ) : (
         <div style={{ display: "flex", flexDirection: "column", gap: 16 }}>
           {interviews.map(interview => (
-            <div key={interview.id} className="card" style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: 16 }}>
+            <div
+              key={interview.id}
+              className="card"
+              style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: 16 }}
+            >
+              {/* Interview info */}
               <div style={{ flex: 1, minWidth: 0 }}>
-                <h3 style={{ fontSize: 17, fontWeight: 600, marginBottom: 4 }}>{interview.title}</h3>
+                <h3 style={{ fontSize: 17, fontWeight: 600, marginBottom: 4 }}>
+                  {interview.title}
+                </h3>
                 {interview.description && (
-                  <p style={{ fontSize: 13, color: "rgba(240,240,255,0.4)", marginBottom: 6 }}>{interview.description}</p>
+                  <p style={{ fontSize: 13, color: "rgba(240,240,255,0.4)", marginBottom: 6 }}>
+                    {interview.description}
+                  </p>
                 )}
                 <p style={{ fontSize: 12, color: "rgba(240,240,255,0.3)" }}>
                   {new Date(interview.created_at).toLocaleDateString()}
                 </p>
               </div>
 
+              {/* Action buttons */}
               <div style={{ display: "flex", gap: 8, flexShrink: 0, flexWrap: "wrap", justifyContent: "flex-end" }}>
                 <button
                   className="btn-ghost"
@@ -111,14 +121,36 @@ export default function DashboardPage() {
                 >
                   {copied === interview.id ? t.copied : t.copyLink}
                 </button>
+
                 <Link href={`/interviews/${interview.id}`}>
                   <button className="btn-ghost" style={{ padding: "7px 14px", fontSize: 13 }}>
                     {t.viewResponses}
                   </button>
                 </Link>
+
+                {/* Dashboard button — routes to chart config page */}
+                <Link href={`/interviews/${interview.id}/dashboard`}>
+                  <button
+                    className="btn-ghost"
+                    style={{
+                      padding: "7px 14px",
+                      fontSize: 13,
+                      color: "#a78bfa",
+                      borderColor: "rgba(167,139,250,0.35)",
+                    }}
+                  >
+                    Create Dashboard
+                  </button>
+                </Link>
+
                 <button
                   className="btn-ghost"
-                  style={{ padding: "7px 14px", fontSize: 13, color: "#f87171", borderColor: "rgba(239,68,68,0.3)" }}
+                  style={{
+                    padding: "7px 14px",
+                    fontSize: 13,
+                    color: "#f87171",
+                    borderColor: "rgba(239,68,68,0.3)",
+                  }}
                   onClick={() => handleDelete(interview.id)}
                   disabled={deleting === interview.id}
                 >
