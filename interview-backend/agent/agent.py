@@ -9,7 +9,7 @@ from dotenv import load_dotenv
 from livekit.agents import JobContext, WorkerOptions, cli
 from livekit.agents.voice import Agent, AgentSession
 from livekit.agents import function_tool
-from livekit.plugins import azure, deepgram, groq
+from livekit.plugins import azure, deepgram, groq, silero 
 
 load_dotenv(".env.local")
 
@@ -24,6 +24,8 @@ SUPABASE_KEY     = os.environ["SUPABASE_SERVICE_KEY"]
 INTERNAL_API_URL = os.environ["INTERNAL_API_URL"]
 INTERNAL_API_KEY = os.environ["INTERNAL_API_KEY"]
 
+def prewarm(proc):
+    proc.userdata["vad"] = silero.VAD.load()
 
 async def fetch_questions(interview_id: str) -> tuple[list[dict], str, str]:
     url = f"{INTERNAL_API_URL}/internal/interviews/{interview_id}/questions"
@@ -150,6 +152,9 @@ async def entrypoint(ctx: JobContext):
     # Shared state — only the tool mutates this now
     state = {
         "question_index": 0,
+        "answered_ids": set(), 
+        "last_answer": "",       # 👈 add this
+        "last_question_id": None # 👈 add this
     }
 
     print("\n" + "="*60)
@@ -165,20 +170,24 @@ async def entrypoint(ctx: JobContext):
 
     session = AgentSession(
         stt=deepgram.STT(language=stt_language),
-        llm=groq.LLM(model="llama-3.3-70b-versatile"),
+        llm=groq.LLM(model="llama-3.3-70b-versatile"), #
         tts=azure.TTS(voice=tts_voice),
+        vad=ctx.proc.userdata["vad"],   
+        turn_detection="vad",  
+        min_endpointing_delay=1.0,      # does not end turn before 1 second
+        max_endpointing_delay=5.0,      # does not wait for more than 5 seconds: prevents lengthy silences 
     )
     
     # Define the tool — closures capture session_id, questions, state, ctx
     @function_tool
     async def advance_question(answer: str) -> str:
         """
-        Call this tool when the user has given a valid answer to the current question.
+        Call this tool when the user has given a valid and complete answer to the current question.
+        Do NOT call this on partial or incomplete answers.
 
         How to fill the 'answer' parameter depends on the question type:
-        - If the question has type "mcq" (has numbered options like 1, 2, 3...):
-        pass ONLY the number the user selected (e.g. "2"). If the user said the
-        option name instead of the number, convert it to the corresponding number.
+        - If the question has type "mcq" (has labeled options such as 1, 2, 3... or A, B, C, D...):
+        Pass ONLY the option label the user selected (e.g. "2" or "B"). If the user said the option text instead of the label, convert it to the corresponding option label. Preserve the label format used by the question (numbered or lettered).
         - If the question has type "open-ended" (no numbered options):
         pass the user's exact spoken words verbatim, do not summarize or rephrase.
 
@@ -187,7 +196,32 @@ async def entrypoint(ctx: JobContext):
         current_index = state["question_index"]
         current_q = questions[current_index]
 
-        print(f"[TOOL] advance_question | type={current_q.get('type')} | Q{current_q['id']}: {answer}")
+        # Duplicate call guard
+        if current_q["id"] in state["answered_ids"]:
+            print(f"[TOOL] Duplicate call for Q{current_q['id']} — ignoring")
+            return "Already answered. Ask the next question."
+
+        # 👇 Continuation check
+        if current_index > 0 and state["last_answer"]:
+            prev_answer = state["last_answer"]
+            if prev_answer.lower() in answer.lower():
+                prev_q = questions[current_index - 1]
+                print(f"[TOOL] Continuation detected — updating Q{prev_q['id']} instead of Q{current_q['id']}")
+                await save_response(session_id, prev_q["id"], prev_q["text"], answer)
+                state["last_answer"] = answer
+                # Don't advance, don't mark current question as answered
+                return (
+                    f"That was a continuation of the previous answer. "
+                    f"Q{prev_q['id']} has been updated with the full response. "
+                    f"Now ask question {current_index + 1}: {current_q['text']}"
+                )
+
+        # Normal path
+        state["answered_ids"].add(current_q["id"])
+        state["last_answer"] = answer          # 👈 track it
+        state["last_question_id"] = current_q["id"]
+
+
         print(f"[TOOL] advance_question called for Q{current_q['id']}: {answer}")
 
         # Save response to Supabase
@@ -268,6 +302,7 @@ async def entrypoint(ctx: JobContext):
 if __name__ == "__main__":
     cli.run_app(WorkerOptions(
         entrypoint_fnc=entrypoint,
+        prewarm_fnc=prewarm,
         agent_name="interview-agent",
         load_threshold=0.9,
     ))
