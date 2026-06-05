@@ -1,3 +1,4 @@
+//interview-frontend\app\interview\[id]\page.tsx
 "use client";
 import { useState, useCallback, useEffect } from "react";
 import { useParams } from "next/navigation";

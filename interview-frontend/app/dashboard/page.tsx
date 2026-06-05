@@ -1,9 +1,11 @@
+//
 "use client";
 import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
 import { useAuth } from "@/context/AuthContext";
 import { useLang } from "@/context/LanguageContext";
+
 import { api } from "@/lib/api";
 
 interface Interview {
@@ -64,7 +66,11 @@ export default function DashboardPage() {
   }
 
   return (
+  <>
+   
+
     <div style={{ maxWidth: 800, margin: "0 auto", padding: "40px 24px" }}>
+
       <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 32 }}>
         <div>
           <h1 style={{ fontSize: 28, fontWeight: 700 }}>{t.myInterviews}</h1>
@@ -72,6 +78,7 @@ export default function DashboardPage() {
             {user?.email}
           </p>
         </div>
+
         <Link href="/interviews/new">
           <button className="btn-primary" style={{ width: "auto", padding: "10px 20px" }}>
             + {t.createInterview}
@@ -82,7 +89,10 @@ export default function DashboardPage() {
       {interviews.length === 0 ? (
         <div className="card" style={{ textAlign: "center", padding: "60px 24px" }}>
           <div style={{ fontSize: 48, marginBottom: 16 }}>🎙️</div>
-          <p style={{ color: "rgba(240,240,255,0.4)", marginBottom: 24 }}>{t.noInterviews}</p>
+          <p style={{ color: "rgba(240,240,255,0.4)", marginBottom: 24 }}>
+            {t.noInterviews}
+          </p>
+
           <Link href="/interviews/new">
             <button className="btn-primary" style={{ width: "auto", padding: "10px 24px" }}>
               + {t.createInterview}
@@ -97,22 +107,22 @@ export default function DashboardPage() {
               className="card"
               style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: 16 }}
             >
-              {/* Interview info */}
               <div style={{ flex: 1, minWidth: 0 }}>
                 <h3 style={{ fontSize: 17, fontWeight: 600, marginBottom: 4 }}>
                   {interview.title}
                 </h3>
+
                 {interview.description && (
                   <p style={{ fontSize: 13, color: "rgba(240,240,255,0.4)", marginBottom: 6 }}>
                     {interview.description}
                   </p>
                 )}
+
                 <p style={{ fontSize: 12, color: "rgba(240,240,255,0.3)" }}>
                   {new Date(interview.created_at).toLocaleDateString()}
                 </p>
               </div>
 
-              {/* Action buttons */}
               <div style={{ display: "flex", gap: 8, flexShrink: 0, flexWrap: "wrap", justifyContent: "flex-end" }}>
                 <button
                   className="btn-ghost"
@@ -128,7 +138,6 @@ export default function DashboardPage() {
                   </button>
                 </Link>
 
-                {/* Dashboard button — routes to chart config page */}
                 <Link href={`/interviews/${interview.id}/dashboard`}>
                   <button
                     className="btn-ghost"
@@ -161,6 +170,8 @@ export default function DashboardPage() {
           ))}
         </div>
       )}
+
     </div>
-  );
+  </>
+);
 }
