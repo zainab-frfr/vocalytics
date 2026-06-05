@@ -6,7 +6,7 @@ function getToken() {
   return localStorage.getItem("access_token");
 }
 
-async function request(path: string, options: RequestInit = {}) {
+async function request(path: string, options: RequestInit = {}, retry = true) {
   const token = getToken();
   const headers: Record<string, string> = {
     "Content-Type": "application/json",
@@ -16,16 +16,31 @@ async function request(path: string, options: RequestInit = {}) {
 
   const res = await fetch(`${API_URL}${path}`, { ...options, headers });
   const data = await res.json();
+
+  if (res.status === 401) {
+    if (retry) {
+      console.warn("[401] retrying:", path);
+      await new Promise(r => setTimeout(r, 300)); // small delay before retry
+      return request(path, options, false);
+    }
+    // Only redirect if it's not a session responses call
+    // (those fail due to connection issues, not bad tokens)
+    if (!path.includes("/sessions/") || !path.includes("/responses")) {
+      console.error("[401 final] logging out:", path);
+      localStorage.removeItem("access_token");
+      localStorage.removeItem("refresh_token");
+      window.location.href = "/login";
+    }
+    return null;
+  }
+
   if (!res.ok) throw new Error(data.error || "Request failed");
   return data;
 }
 
 
 // ── Cache ─────────────────────────────────────────────────────
-// Short TTL so backend invalidations are picked up quickly.
-// Backend is the real cache — this just avoids hammering it on
-// every re-render / tab switch within the same minute.
-const TTL_MS = 60 * 1000; // 1 min
+const TTL_MS = 60 * 1000; // 1 min frontend TTL — backend holds for 1 hour
 
 interface CacheEntry {
   value: unknown;
@@ -46,17 +61,32 @@ function cacheSet(key: string, value: unknown) {
 }
 
 function cacheInvalidate() {
-  _cache.clear(); // always wipe everything on any write
+  _cache.clear();
 }
 
 async function cachedRequest(key: string, path: string) {
+  const token = getToken();
+  if (!token) {
+    // Don't silently return null — let the caller handle it
+    throw new Error("No auth token");
+  }
+
   const hit = cacheGet(key);
   if (hit !== null) return hit;
-  const data = await request(path);
-  cacheSet(key, data);
-  return data;
-}
 
+  try {
+    const data = await request(path);
+    if (data !== undefined && data !== null) {
+      cacheSet(key, data);
+    }
+    return data;
+  } catch (err) {
+    if (err instanceof Error && err.message === "Session not found") return null;
+    if (err instanceof Error && err.message === "Interview not found") return null;
+    if (err instanceof Error && err.message === "Not found") return null;
+    throw err;
+  }
+}
 
 // ── API ───────────────────────────────────────────────────────
 export const api = {
@@ -73,7 +103,7 @@ export const api = {
     questions: object[]; prompt?: string; language?: string;
   }) => {
     const result = await request("/interviews/", { method: "POST", body: JSON.stringify(data) });
-    cacheInvalidate(); // wipe frontend cache — backend already wiped its own
+    cacheInvalidate();
     return result;
   },
 

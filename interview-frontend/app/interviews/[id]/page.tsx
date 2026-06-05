@@ -1,4 +1,3 @@
-//interview-frontend\app\interviews\[id]\page.tsx
 "use client";
 import { useEffect, useState } from "react";
 import { useRouter, useParams } from "next/navigation";
@@ -25,7 +24,6 @@ interface SessionWithResponses extends Session {
   loaded: boolean;
 }
 
-// ✅ CHANGED: Added SkeletonCell component for pretty loading
 function SkeletonCell() {
   return (
     <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
@@ -61,24 +59,34 @@ export default function InterviewDetailPage() {
   const [hoveredQuestion, setHoveredQuestion] = useState<number | null>(null);
 
   useEffect(() => {
-    if (!loading && !user) router.push("/login");
-  }, [user, loading]);
+  // Wait for auth to finish loading
+  if (loading) return;
+  
+  // If no user after auth loaded, redirect
+  if (!user) {
+    router.push("/login");
+    return;
+  }
 
-  useEffect(() => {
-    if (!user || !id) return;
-    Promise.all([
-      api.getInterview(id),
-      api.getInterviewSessions(id),
-    ]).then(([iData, sData]) => {
-      setInterview(iData.interview);
-      const enriched = sData.sessions.map((s: Session) => ({
-        ...s, responses: [], loaded: false,
-      }));
-      setSessions(enriched);
-    }).catch(console.error)
-      .finally(() => setFetching(false));
-  }, [user, id]);
+  // Auth is ready, now fetch
+  if (!id) return;
+  
+  setFetching(true);
+  Promise.all([
+    api.getInterview(id),
+    api.getInterviewSessions(id),
+  ]).then(([iData, sData]) => {
+    if (!iData || !sData) return;
+    setInterview(iData.interview);
+    const enriched = sData.sessions.map((s: Session) => ({
+      ...s, responses: [], loaded: false,
+    }));
+    setSessions(enriched);
+  }).catch(console.error)
+    .finally(() => setFetching(false));
+}, [loading, user, id]);  // ← depends on loading too now
 
+  // ← THIS was the missing useEffect
   useEffect(() => {
     if (sessions.length === 0) return;
     const unloaded = sessions.filter(s => !s.loaded);
@@ -86,7 +94,9 @@ export default function InterviewDetailPage() {
     setLoadingAll(true);
     Promise.all(
       unloaded.map(s =>
-        api.getSessionResponses(s.id).then(data => ({ id: s.id, responses: data.responses }))
+        api.getSessionResponses(s.id)
+          .then(data => ({ id: s.id, responses: data?.responses ?? [] }))
+          .catch(() => ({ id: s.id, responses: [] }))
       )
     ).then(results => {
       setSessions(prev => prev.map(s => {
@@ -129,8 +139,6 @@ export default function InterviewDetailPage() {
 
   return (
     <div style={{ maxWidth: 1100, margin: "0 auto", padding: "40px 24px" }}>
-
-      {/* ✅ CHANGED: Added shimmer keyframe animation via style tag */}
       <style>{`
         @keyframes shimmer {
           0% { background-position: 200% 0; }
@@ -138,7 +146,6 @@ export default function InterviewDetailPage() {
         }
       `}</style>
 
-      {/* Header */}
       <div style={{ marginBottom: 32 }}>
         <Link href="/dashboard" style={{ color: "rgba(240,240,255,0.4)", fontSize: 14, textDecoration: "none" }}>
           ← {t.dashboard}
@@ -156,12 +163,10 @@ export default function InterviewDetailPage() {
         </div>
       </div>
 
-      {/* Table header */}
       <div style={{ marginBottom: 16, display: "flex", justifyContent: "space-between", alignItems: "center" }}>
         <h2 style={{ fontSize: 18, fontWeight: 600 }}>
           {t.sessions} ({sessions.length})
         </h2>
-        {/* ✅ CHANGED: Replaced plain text with a styled loading pill */}
         {loadingAll && (
           <div style={{
             display: "flex", alignItems: "center", gap: 8,
@@ -205,30 +210,17 @@ export default function InterviewDetailPage() {
             <thead>
               <tr style={{ borderBottom: "1px solid rgba(255,255,255,0.08)" }}>
                 <th style={{
-                  padding: "14px 16px",
-                  textAlign: "left",
-                  fontWeight: 600,
-                  fontSize: 12,
-                  color: "rgba(240,240,255,0.5)",
-                  whiteSpace: "nowrap",
-                  position: "sticky",
-                  left: 0,
-                  background: "rgba(15,10,30,0.98)",
-                  zIndex: 2,
-                  minWidth: 160,
-                  borderRight: "1px solid rgba(255,255,255,0.08)",
+                  padding: "14px 16px", textAlign: "left", fontWeight: 600,
+                  fontSize: 12, color: "rgba(240,240,255,0.5)", whiteSpace: "nowrap",
+                  position: "sticky", left: 0, background: "rgba(15,10,30,0.98)",
+                  zIndex: 2, minWidth: 160, borderRight: "1px solid rgba(255,255,255,0.08)",
                 }}>
                   Respondent
                 </th>
                 <th style={{
-                  padding: "14px 16px",
-                  textAlign: "left",
-                  fontWeight: 600,
-                  fontSize: 12,
-                  color: "rgba(240,240,255,0.5)",
-                  whiteSpace: "nowrap",
-                  minWidth: 110,
-                  borderRight: "1px solid rgba(255,255,255,0.08)",
+                  padding: "14px 16px", textAlign: "left", fontWeight: 600,
+                  fontSize: 12, color: "rgba(240,240,255,0.5)", whiteSpace: "nowrap",
+                  minWidth: 110, borderRight: "1px solid rgba(255,255,255,0.08)",
                 }}>
                   Status
                 </th>
@@ -236,13 +228,8 @@ export default function InterviewDetailPage() {
                   <th
                     key={q.id}
                     style={{
-                      padding: "14px 16px",
-                      textAlign: "left",
-                      fontWeight: 600,
-                      fontSize: 12,
-                      color: "#a855f7",
-                      minWidth: 220,
-                      maxWidth: 300,
+                      padding: "14px 16px", textAlign: "left", fontWeight: 600,
+                      fontSize: 12, color: "#a855f7", minWidth: 220, maxWidth: 300,
                       borderRight: i < questions.length - 1 ? "1px solid rgba(255,255,255,0.06)" : "none",
                       position: "relative",
                     }}
@@ -266,21 +253,13 @@ export default function InterviewDetailPage() {
                     </div>
                     {hoveredQuestion === i && (
                       <div style={{
-                        position: "absolute",
-                        top: "100%",
-                        left: 0,
-                        zIndex: 50,
+                        position: "absolute", top: "100%", left: 0, zIndex: 50,
                         background: "rgba(25,15,50,0.98)",
                         border: "1px solid rgba(168,85,247,0.4)",
-                        borderRadius: 10,
-                        padding: "12px 14px",
-                        width: 280,
+                        borderRadius: 10, padding: "12px 14px", width: 280,
                         boxShadow: "0 8px 32px rgba(0,0,0,0.5)",
-                        fontSize: 13,
-                        color: "rgba(240,240,255,0.9)",
-                        lineHeight: 1.6,
-                        fontWeight: 400,
-                        pointerEvents: "none",
+                        fontSize: 13, color: "rgba(240,240,255,0.9)",
+                        lineHeight: 1.6, fontWeight: 400, pointerEvents: "none",
                       }}>
                         <p style={{ color: "#a855f7", fontWeight: 600, fontSize: 11, marginBottom: 6 }}>
                           Question {i + 1}
@@ -307,13 +286,9 @@ export default function InterviewDetailPage() {
                     onMouseLeave={e => (e.currentTarget.style.background = "transparent")}
                   >
                     <td style={{
-                      padding: "14px 16px",
-                      position: "sticky",
-                      left: 0,
-                      background: "rgba(15,10,30,0.98)",
-                      zIndex: 1,
-                      borderRight: "1px solid rgba(255,255,255,0.08)",
-                      whiteSpace: "nowrap",
+                      padding: "14px 16px", position: "sticky", left: 0,
+                      background: "rgba(15,10,30,0.98)", zIndex: 1,
+                      borderRight: "1px solid rgba(255,255,255,0.08)", whiteSpace: "nowrap",
                     }}>
                       <p style={{ fontWeight: 600, color: "rgba(240,240,255,0.9)", fontSize: 13 }}>
                         {session.respondent_name}
@@ -335,20 +310,15 @@ export default function InterviewDetailPage() {
                       const answer = responseMap[q.id];
                       return (
                         <td key={q.id} style={{
-                          padding: "14px 16px",
-                          verticalAlign: "top",
+                          padding: "14px 16px", verticalAlign: "top",
                           borderRight: i < questions.length - 1
                             ? "1px solid rgba(255,255,255,0.06)" : "none",
                           maxWidth: 300,
                         }}>
-                          {/* ✅ CHANGED: Replaced "—" with SkeletonCell component */}
                           {!session.loaded ? (
                             <SkeletonCell />
                           ) : answer ? (
-                            <p style={{
-                              fontSize: 13, color: "rgba(240,240,255,0.8)",
-                              lineHeight: 1.6, margin: 0,
-                            }}>
+                            <p style={{ fontSize: 13, color: "rgba(240,240,255,0.8)", lineHeight: 1.6, margin: 0 }}>
                               {answer}
                             </p>
                           ) : (

@@ -1,5 +1,5 @@
 from flask import Blueprint, request, jsonify, g
-from api.db import get_supabase, invalidate_all
+from api.db import get_supabase, invalidate_all, get_interviews, get_interview, get_interview_sessions, _execute_with_retry
 from api.middleware import require_auth
 
 interviews_bp = Blueprint("interviews", __name__)
@@ -24,20 +24,17 @@ def create_interview():
         q.setdefault("type", "general")
         q.setdefault("order", i + 1)
     try:
-        supabase = get_supabase()
-        result = (
-            supabase.table("interviews")
-            .insert({
+        result = _execute_with_retry(
+            lambda: get_supabase().table("interviews").insert({
                 "creator_id":  str(g.user.id),
                 "title":       title,
                 "description": description or None,
                 "questions":   questions,
                 "prompt":      body.get("prompt") or None,
                 "language":    body.get("language") or "ur",
-            })
-            .execute()
+            }).execute()
         )
-        invalidate_all()  # ← new
+        invalidate_all()
         return jsonify({"interview": result.data[0]}), 201
     except Exception as e:
         return jsonify({"error": str(e)}), 500
@@ -47,35 +44,23 @@ def create_interview():
 @require_auth
 def list_interviews():
     try:
-        supabase = get_supabase()
-        result = (
-            supabase.table("interviews")
-            .select("id, title, description, created_at")
-            .eq("creator_id", str(g.user.id))
-            .order("created_at", desc=True)
-            .execute()
-        )
-        return jsonify({"interviews": result.data}), 200
+        interviews = get_interviews(str(g.user.id))  # ← cached
+        return jsonify({"interviews": interviews}), 200
     except Exception as e:
         return jsonify({"error": str(e)}), 500
 
 
 @interviews_bp.get("/<interview_id>")
 @require_auth
-def get_interview(interview_id: str):
+def get_interview_route(interview_id: str):
     try:
-        supabase = get_supabase()
-        result = (
-            supabase.table("interviews")
-            .select("*")
-            .eq("id", interview_id)
-            .eq("creator_id", str(g.user.id))
-            .single()
-            .execute()
-        )
-        if not result.data:
+        interview = get_interview(interview_id)  # ← cached
+        if not interview:
             return jsonify({"error": "Interview not found"}), 404
-        return jsonify({"interview": result.data}), 200
+        # ownership check
+        if interview.get("creator_id") != str(g.user.id):
+            return jsonify({"error": "Interview not found"}), 404
+        return jsonify({"interview": interview}), 200
     except Exception as e:
         return jsonify({"error": str(e)}), 500
 
@@ -84,19 +69,18 @@ def get_interview(interview_id: str):
 @require_auth
 def delete_interview(interview_id: str):
     try:
-        supabase = get_supabase()
-        existing = (
-            supabase.table("interviews")
-            .select("id")
-            .eq("id", interview_id)
-            .eq("creator_id", str(g.user.id))
-            .single()
-            .execute()
+        existing = _execute_with_retry(
+            lambda: get_supabase().table("interviews")
+                .select("id").eq("id", interview_id)
+                .eq("creator_id", str(g.user.id)).single().execute()
         )
         if not existing.data:
             return jsonify({"error": "Interview not found"}), 404
-        supabase.table("interviews").delete().eq("id", interview_id).execute()
-        invalidate_all()  # ← new
+        _execute_with_retry(
+            lambda: get_supabase().table("interviews")
+                .delete().eq("id", interview_id).execute()
+        )
+        invalidate_all()
         return jsonify({"message": "Interview deleted"}), 200
     except Exception as e:
         return jsonify({"error": str(e)}), 500
@@ -104,26 +88,12 @@ def delete_interview(interview_id: str):
 
 @interviews_bp.get("/<interview_id>/sessions")
 @require_auth
-def get_interview_sessions(interview_id: str):
+def get_interview_sessions_route(interview_id: str):
     try:
-        supabase = get_supabase()
-        owner_check = (
-            supabase.table("interviews")
-            .select("id")
-            .eq("id", interview_id)
-            .eq("creator_id", str(g.user.id))
-            .single()
-            .execute()
-        )
-        if not owner_check.data:
+        interview = get_interview(interview_id)  # ← cached
+        if not interview or interview.get("creator_id") != str(g.user.id):
             return jsonify({"error": "Interview not found"}), 404
-        result = (
-            supabase.table("interview_sessions")
-            .select("id, room_name, status, respondent_name, created_at, completed_at")
-            .eq("interview_id", interview_id)
-            .order("created_at", desc=True)
-            .execute()
-        )
-        return jsonify({"sessions": result.data}), 200
+        sessions = get_interview_sessions(interview_id)  # ← cached
+        return jsonify({"sessions": sessions}), 200
     except Exception as e:
         return jsonify({"error": str(e)}), 500
