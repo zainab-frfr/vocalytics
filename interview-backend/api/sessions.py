@@ -1,9 +1,10 @@
+# sessions.py
 import asyncio
 import json
 import os
 import uuid
 
-from flask import Blueprint, request, jsonify, g, session
+from flask import Blueprint, request, jsonify, g
 from livekit import api as lkapi
 
 from api.db import get_supabase, invalidate_all, _execute_with_retry, get_session_responses as fetch_session_responses
@@ -80,7 +81,7 @@ def start_session():
                 .single()
                 .execute()
         )
-        if not interview_result.data:
+        if not interview_result or not interview_result.data:
             return jsonify({"error": "Interview not found"}), 404
     except Exception:
         return jsonify({"error": "Interview not found"}), 404
@@ -142,22 +143,29 @@ def get_session_responses(session_id: str):
                 .single()
                 .execute()
         )
-        if not session_result.data:
+        if not session_result or not session_result.data:
             return jsonify({"error": "Session not found"}), 404
         session = session_result.data
     except Exception:
         return jsonify({"error": "Session not found"}), 404
 
-    owner_check = _execute_with_retry(
-        lambda: get_supabase().table("interviews")
-            .select("id")
-            .eq("id", session["interview_id"])
-            .eq("creator_id", str(g.user.id))
-            .single()
-            .execute()
-    )
-    if not owner_check.data:
+    try:
+        owner_check = _execute_with_retry(
+            lambda: get_supabase().table("interviews")
+                .select("id")
+                .eq("id", session["interview_id"])
+                .eq("creator_id", str(g.user.id))
+                .single()
+                .execute()
+        )
+        if not owner_check or not owner_check.data:
+            return jsonify({"error": "Forbidden"}), 403
+    except Exception:
         return jsonify({"error": "Forbidden"}), 403
 
-    responses = fetch_session_responses(session_id)  # uses cached fetcher + retry
+    try:
+        responses = fetch_session_responses(session_id)
+    except Exception as e:
+        return jsonify({"error": f"Failed to fetch responses: {str(e)}"}), 500
+
     return jsonify({"session": session, "responses": responses}), 200

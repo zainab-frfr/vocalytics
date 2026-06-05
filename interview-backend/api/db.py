@@ -15,14 +15,13 @@ def get_supabase() -> Client:
     return _client
 
 def _reset_client():
-    """Force a fresh client on next call — fixes stale HTTP/2 connections."""
     global _client
     _client = None
 
 
 # ── Cache ─────────────────────────────────────────────────────
 _cache: dict[str, tuple] = {}
-TTL = 60 * 60  * 4# 1 hour
+TTL = 60 * 60 * 4  # 4 hours
 
 def _get(key: str):
     entry = _cache.get(key)
@@ -44,7 +43,6 @@ def _execute_with_retry(query_fn):
     except Exception as e:
         error_str = str(e)
         error_type = type(e).__name__
-        # Catch all stale connection errors
         if any(keyword in error_str or keyword in error_type for keyword in [
             "RemoteProtocolError",
             "Server disconnected",
@@ -55,8 +53,9 @@ def _execute_with_retry(query_fn):
             "PoolTimeout",
         ]):
             _reset_client()
-            return query_fn()  # retry once with fresh client
+            return query_fn()
         raise
+
 
 # ── Cached fetchers ───────────────────────────────────────────
 def get_interviews(user_id: str) -> list:
@@ -67,20 +66,22 @@ def get_interviews(user_id: str) -> list:
     data = _execute_with_retry(
         lambda: get_supabase().table("interviews")
             .select("*").eq("creator_id", user_id).order("created_at", desc=True).execute().data
-    )
+    ) or []
     _set(key, data)
     return data
 
-def get_interview(interview_id: str) -> dict:
+def get_interview(interview_id: str) -> dict | None:
     key = f"interview:{interview_id}"
     cached = _get(key)
     if cached is not None:
         return cached
-    data = _execute_with_retry(
+    result = _execute_with_retry(
         lambda: get_supabase().table("interviews")
-            .select("*").eq("id", interview_id).single().execute().data
+            .select("*").eq("id", interview_id).single().execute()
     )
-    _set(key, data)
+    data = result.data if result else None
+    if data:
+        _set(key, data)
     return data
 
 def get_interview_sessions(interview_id: str) -> list:
@@ -91,7 +92,7 @@ def get_interview_sessions(interview_id: str) -> list:
     data = _execute_with_retry(
         lambda: get_supabase().table("interview_sessions")
             .select("*").eq("interview_id", interview_id).execute().data
-    )
+    ) or []
     _set(key, data)
     return data
 
@@ -100,9 +101,10 @@ def get_session_responses(session_id: str) -> list:
     cached = _get(key)
     if cached is not None:
         return cached
-    data = _execute_with_retry(
+    result = _execute_with_retry(
         lambda: get_supabase().table("responses")
-            .select("*").eq("session_id", session_id).execute().data
+            .select("*").eq("session_id", session_id).execute()
     )
+    data = (result.data if result else None) or []
     _set(key, data)
     return data

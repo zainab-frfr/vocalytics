@@ -20,11 +20,9 @@ async function request(path: string, options: RequestInit = {}, retry = true) {
   if (res.status === 401) {
     if (retry) {
       console.warn("[401] retrying:", path);
-      await new Promise(r => setTimeout(r, 300)); // small delay before retry
+      await new Promise(r => setTimeout(r, 300));
       return request(path, options, false);
     }
-    // Only redirect if it's not a session responses call
-    // (those fail due to connection issues, not bad tokens)
     if (!path.includes("/sessions/") || !path.includes("/responses")) {
       console.error("[401 final] logging out:", path);
       localStorage.removeItem("access_token");
@@ -40,7 +38,7 @@ async function request(path: string, options: RequestInit = {}, retry = true) {
 
 
 // ── Cache ─────────────────────────────────────────────────────
-const TTL_MS = 60 * 1000; // 1 min frontend TTL — backend holds for 1 hour
+const TTL_MS = 60 * 1000;
 
 interface CacheEntry {
   value: unknown;
@@ -66,10 +64,7 @@ function cacheInvalidate() {
 
 async function cachedRequest(key: string, path: string) {
   const token = getToken();
-  if (!token) {
-    // Don't silently return null — let the caller handle it
-    throw new Error("No auth token");
-  }
+  if (!token) throw new Error("No auth token");
 
   const hit = cacheGet(key);
   if (hit !== null) return hit;
@@ -81,12 +76,16 @@ async function cachedRequest(key: string, path: string) {
     }
     return data;
   } catch (err) {
-    if (err instanceof Error && err.message === "Session not found") return null;
-    if (err instanceof Error && err.message === "Interview not found") return null;
-    if (err instanceof Error && err.message === "Not found") return null;
+    if (err instanceof Error && (
+      err.message === "Session not found" ||
+      err.message === "Interview not found" ||
+      err.message === "Not found" ||
+      err.message.startsWith("Failed to fetch responses")
+    )) return null;
     throw err;
   }
 }
+
 
 // ── API ───────────────────────────────────────────────────────
 export const api = {
