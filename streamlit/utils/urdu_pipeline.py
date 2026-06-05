@@ -5,6 +5,8 @@ from rapidfuzz import process, utils as fuzz_utils
 from groq import Groq
 
 # ── Client (lazy init) ────────────────────────────────────────────────────────
+from dotenv import load_dotenv
+load_dotenv(dotenv_path=".env.local")
 
 _groq_client = None
 
@@ -145,9 +147,7 @@ def process_column(series: pd.Series, col_type: str) -> pd.Series:
     """
     result = series.copy().astype(object)
 
-    urdu_mask = series.apply(
-        lambda x: is_urdu(str(x)) if pd.notna(x) and str(x).strip() else False
-    )
+    urdu_mask = series.astype(str).str.contains(r'[\u0600-\u06FF]', na=False)
 
     if not urdu_mask.any():
         return result  # nothing to do

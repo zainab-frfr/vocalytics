@@ -6,6 +6,8 @@ import templates.base_template as generic_tpl
 
 st.set_page_config(page_title="Vocalytics Dashboard", layout="wide", page_icon="📊")
 
+st.cache_data.clear()
+
 # ── URL params ────────────────────────────────────────────────────────────────
 def _get(key, default):
     v = st.query_params.get(key, default)

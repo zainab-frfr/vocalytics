@@ -1,5 +1,5 @@
 from flask import Blueprint, request, jsonify, g
-from api.db import get_supabase
+from api.db import get_supabase, invalidate_all
 from api.middleware import require_auth
 
 interviews_bp = Blueprint("interviews", __name__)
@@ -33,10 +33,11 @@ def create_interview():
                 "description": description or None,
                 "questions":   questions,
                 "prompt":      body.get("prompt") or None,
-                "language": body.get("language") or "ur",
+                "language":    body.get("language") or "ur",
             })
             .execute()
         )
+        invalidate_all()  # ← new
         return jsonify({"interview": result.data[0]}), 201
     except Exception as e:
         return jsonify({"error": str(e)}), 500
@@ -95,6 +96,7 @@ def delete_interview(interview_id: str):
         if not existing.data:
             return jsonify({"error": "Interview not found"}), 404
         supabase.table("interviews").delete().eq("id", interview_id).execute()
+        invalidate_all()  # ← new
         return jsonify({"message": "Interview deleted"}), 200
     except Exception as e:
         return jsonify({"error": str(e)}), 500

@@ -6,7 +6,7 @@ import uuid
 from flask import Blueprint, request, jsonify, g
 from livekit import api as lkapi
 
-from api.db import get_supabase
+from api.db import get_supabase, invalidate_all
 from api.middleware import require_auth
 
 sessions_bp = Blueprint("sessions", __name__)
@@ -108,6 +108,7 @@ def start_session():
     identity = f"respondent-{uuid.uuid4().hex[:6]}"
     token = _make_participant_token(room_name, identity, respondent_name)
     supabase.table("interview_sessions").update({"status": "active"}).eq("id", session_id).execute()
+    invalidate_all()  # ← new
     return jsonify({
         "session_id":    session_id,
         "room_name":     room_name,

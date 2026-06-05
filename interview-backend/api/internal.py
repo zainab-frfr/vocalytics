@@ -1,6 +1,6 @@
 from datetime import datetime, timezone
 from flask import Blueprint, jsonify
-from api.db import get_supabase
+from api.db import get_supabase, invalidate_all
 from api.middleware import require_internal_key
 
 internal_bp = Blueprint("internal", __name__)
@@ -55,6 +55,7 @@ def complete_session(session_id: str):
             "status":       "completed",
             "completed_at": now,
         }).eq("id", session_id).execute()
+        invalidate_all()  # ← new
         return jsonify({"message": "Session marked as completed"}), 200
     except Exception as e:
         return jsonify({"error": str(e)}), 500
